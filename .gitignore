@@ -23,10 +23,15 @@ profile.cov
 # Go workspace file
 go.work
 go.work.sum
+traceproxy
+main
 
 # env file
 .env
 
 # Editor/IDE
-# .idea/
-# .vscode/
+.idea/
+.vscode/
+
+# tmporary workspace
+workspace/
