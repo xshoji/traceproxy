@@ -21,7 +21,7 @@ var (
 	optionPort              = flag.String("p", "8888", "Listening port for the HTTP trace proxy")
 	optionEnabledSingleLine = flag.Bool("s", false, "Log request in a single line (compresses newlines)")
 	optionEnabledIgnoreBody = flag.Bool("i", false, "Skip logging body content")
-	optionAllowedOrigins    = flag.String("a", "", "Comma-separated list of allowed origin URLs (e.g., https://example.com,http://api.example.com). Uses prefix matching, so https://example.com matches https://example.com:8080 and https://example.com/path. Empty means all origins allowed. Falls back to ALLOWED_ORIGINS env var")
+	optionAllowedOrigins    = flag.String("a", "", "Allowed origin URLs (comma-separated)")
 )
 
 const maxBodySize = 10 << 20 // 10 MiB
