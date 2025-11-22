@@ -179,12 +179,16 @@ func logDump(prefix string, dumpFunc func() ([]byte, error), errMsg string) ([]b
 			message = strings.ReplaceAll(message, "\r\n", ", ")
 			message = strings.ReplaceAll(message, "\n", " ")
 		} else {
+			// Always add one blank line after the dump output for readability
+			if !strings.HasSuffix(message, "\n") {
+				message = message + "\n"
+			}
 			message = message + "\n"
 		}
 		return message
 	}
 
-	log.Printf("%s %s\n", prefix, adjustMessage(string(data)))
+	log.Printf("%s %s", prefix, adjustMessage(string(data)))
 	return data, nil
 }
 
