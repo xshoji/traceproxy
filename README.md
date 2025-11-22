@@ -40,7 +40,7 @@ Description:
   ALLOWED_ORIGINS env var can be used to set allowed origins.
 
 Options:
-  -a string    List of allowed origin URLs (e.g., https://aaa,http://bbb). Empty means all origins allowed.
+  -a string    List of allowed origin URLs (e.g., https://aaa,http://bbb). Empty means all origins allowed
   -i           Skip logging body content
   -p string    Listening port for the HTTP trace proxy (default "8888")
   -s           Log request in a single line (compresses newlines)
