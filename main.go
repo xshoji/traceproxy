@@ -21,6 +21,7 @@ var (
 	optionPort              = flag.String("p", "8888", "Listening port for the HTTP trace proxy")
 	optionEnabledSingleLine = flag.Bool("s", false, "Log request in a single line (compresses newlines)")
 	optionEnabledIgnoreBody = flag.Bool("i", false, "Skip logging body content")
+	optionAllowedOrigins    = flag.String("a", "", "Comma-separated list of allowed origin URLs (e.g., https://example.com,http://api.example.com). Uses prefix matching, so https://example.com matches https://example.com:8080 and https://example.com/path. Empty means all origins allowed. Falls back to ALLOWED_ORIGINS env var")
 )
 
 const maxBodySize = 10 << 20 // 10 MiB
@@ -51,6 +52,14 @@ func main() {
 	})
 	fmt.Printf("\n")
 
+	// Get allowed origins configuration
+	allowedOrigins := getConfiguredAllowedOrigins()
+	if allowedOrigins != "" {
+		log.Printf("Allowed origins: %s", allowedOrigins)
+	} else {
+		log.Printf("Allowed origins: all (no restriction)")
+	}
+
 	// Start HTTP server
 	// create and reuse a single ReverseProxy instance
 	proxy := newProxy()
@@ -58,10 +67,17 @@ func main() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		dumpRequest(r)
 
-		// r から originというクエリパラメタを取得
+		// Get origin query parameter
 		origin := r.URL.Query().Get("origin")
 		if origin == "" {
 			fmt.Fprintf(w, "OK\n")
+			return
+		}
+
+		// Validate origin against allowed list
+		if !isOriginAllowed(origin, allowedOrigins) {
+			log.Printf("[WARN] origin not allowed: %s", origin)
+			http.Error(w, "Forbidden: origin not allowed", http.StatusForbidden)
 			return
 		}
 
@@ -87,6 +103,7 @@ func newProxy() *httputil.ReverseProxy {
 			}
 			uOrigin, err := url.Parse(orig)
 			if err != nil {
+				log.Printf("[ERROR] failed to parse origin URL in Director: %v", err)
 				return
 			}
 			if uOrigin.Scheme == "" {
@@ -220,4 +237,43 @@ func handleError(err error, prefixErrMessage string, exitOnError bool) {
 			log.Printf("%v\n", err)
 		}
 	}
+}
+
+// getConfiguredAllowedOrigins returns the allowed origins configuration
+// from command-line flag or ALLOWED_ORIGINS environment variable
+func getConfiguredAllowedOrigins() string {
+	origins := *optionAllowedOrigins
+	if origins == "" {
+		origins = os.Getenv("ALLOWED_ORIGINS")
+	}
+	return origins
+}
+
+// isOriginAllowed checks if the given origin URL is allowed based on the configuration.
+// If allowedList is empty, all origins are allowed.
+// Performs prefix matching to support multiple origins with the same scheme and host.
+// Examples: "https://example.com" matches "https://example.com:8080" and "https://example.com/path"
+func isOriginAllowed(originURL string, allowedList string) bool {
+	if allowedList == "" {
+		return true // Empty list means all origins are allowed
+	}
+
+	// Trim whitespace from the origin URL
+	originURL = strings.TrimSpace(originURL)
+
+	// Check against each allowed origin (prefix matching)
+	allowed := strings.Split(allowedList, ",")
+	for _, allowedOrigin := range allowed {
+		allowedOrigin = strings.TrimSpace(allowedOrigin)
+		if allowedOrigin == "" {
+			continue
+		}
+
+		// Prefix match: the originURL must start with the allowed origin
+		if strings.HasPrefix(originURL, allowedOrigin) {
+			return true
+		}
+	}
+
+	return false
 }
