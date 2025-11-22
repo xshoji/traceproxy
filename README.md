@@ -2,6 +2,16 @@
 
 A lightweight HTTP proxy server that intercepts, logs, and forwards HTTP requests to a target origin. Perfect for debugging API calls and analyzing HTTP traffic.
 
+```
++--------+     +------------+     +--------+
+| Client | --> | traceproxy | --> | Origin |
+|        | <-- |            | <-- |        |
++--------+     +------------+     +--------+
+                | Logs     | 
+                | Req/Resp | 
+                +----------+ 
+```
+
 ## Features
 
 - 🔍 Request/Response logging
