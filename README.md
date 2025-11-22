@@ -17,7 +17,7 @@ A lightweight HTTP proxy server that intercepts, logs, and forwards HTTP request
 ```bash
 git clone https://github.com/xshoji/traceproxy.git
 cd traceproxy
-go build -ldflags="-s -w" -trimpath -o traceproxy main.go
+go build -ldflags="-s -w" -trimpath -o $(basename "$PWD") main.go
 ```
 
 ## Usage
