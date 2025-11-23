@@ -33,7 +33,7 @@ func init() {
 	// Time format = datetime + microsec, output file name: true
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
 
-	// Format usage
+	// Set custom usage
 	b := new(bytes.Buffer)
 	func() { flag.CommandLine.SetOutput(b); flag.Usage(); flag.CommandLine.SetOutput(os.Stderr) }()
 	usage := strings.Replace(strings.Replace(b.String(), ":", " [OPTIONS] [-h, --help]\n\nDescription:\n  "+commandDescription+"\n\nOptions:\n", 1), "Usage of", "Usage:", 1)
@@ -59,7 +59,10 @@ func main() {
 	allowedOrigins := getConfiguredAllowedOrigins()
 	if allowedOrigins != "" {
 		allowedOriginURLs = parseAllowedOrigins(allowedOrigins)
-		log.Printf("Allowed origins: %s", allowedOrigins)
+		log.Printf("Allowed origins:\n")
+		for i, u := range allowedOriginURLs {
+			log.Printf("%d. Scheme:%s, Host:%s\n", i, u.Scheme, u.Host)
+		}
 	} else {
 		log.Printf("Allowed origins: all (no restriction)")
 	}
@@ -74,7 +77,7 @@ func main() {
 		// Get origin query parameter
 		origin := r.URL.Query().Get("origin")
 		if origin == "" {
-			fmt.Fprintf(w, "No origin specified.\n")
+			fmt.Fprintf(w, "OK\n")
 			return
 		}
 
@@ -101,17 +104,14 @@ func main() {
 func newProxy() *httputil.ReverseProxy {
 	return &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
-			orig := req.URL.Query().Get("origin")
-			if orig == "" {
+			originUrl := req.URL.Query().Get("origin")
+			if originUrl == "" {
 				return
 			}
-			uOrigin, err := url.Parse(orig)
+			uOrigin, err := parseURLWithDefault(originUrl, "https")
 			if err != nil {
 				log.Printf("[ERROR] failed to parse origin URL in Director: %v", err)
 				return
-			}
-			if uOrigin.Scheme == "" {
-				uOrigin.Scheme = "http"
 			}
 			req.URL.Scheme = uOrigin.Scheme
 			req.URL.Host = uOrigin.Host
@@ -253,6 +253,20 @@ func getConfiguredAllowedOrigins() string {
 	return origins
 }
 
+// parseURLWithDefault parses a URL string and, if the parsed URL has no Scheme and
+// defaultScheme is non-empty, sets the Scheme to defaultScheme. Returns the parsed
+// *url.URL or an error.
+func parseURLWithDefault(s string, defaultScheme string) (*url.URL, error) {
+	u, err := url.Parse(s)
+	if err != nil {
+		return nil, err
+	}
+	if u.Scheme == "" && defaultScheme != "" {
+		u.Scheme = defaultScheme
+	}
+	return u, nil
+}
+
 // parseAllowedOrigins parses the allowed origins string into a slice of URL objects.
 // Exits fatally if any origin cannot be parsed.
 func parseAllowedOrigins(allowedList string) []*url.URL {
@@ -282,14 +296,11 @@ func isOriginAllowed(originURL string, allowedURLs []*url.URL) bool {
 	}
 
 	// Parse origin URL
-	originParsed, err := url.Parse(originURL)
+	originParsed, err := parseURLWithDefault(originURL, "https")
 	if err != nil {
 		log.Fatalf("failed to parse origin URL: %v", err)
 	}
 	originScheme := originParsed.Scheme
-	if originScheme == "" {
-		originScheme = "http" // Default to http if no scheme
-	}
 	originHost := originParsed.Host
 
 	// Check against each allowed URL
@@ -298,8 +309,8 @@ func isOriginAllowed(originURL string, allowedURLs []*url.URL) bool {
 		allowedHost := allowed.Host
 
 		if allowedScheme == "" {
-			// No scheme specified: allow both http and https
-			if (originScheme == "http" || originScheme == "https") && originHost == allowedHost {
+			// No scheme specified: allow all schemes
+			if originHost == allowedHost {
 				return true
 			}
 		} else {
