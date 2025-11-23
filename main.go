@@ -74,7 +74,7 @@ func main() {
 		// Get origin query parameter
 		origin := r.URL.Query().Get("origin")
 		if origin == "" {
-			fmt.Fprintf(w, "OK\n")
+			fmt.Fprintf(w, "No origin specified.\n")
 			return
 		}
 
