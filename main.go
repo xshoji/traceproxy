@@ -22,6 +22,9 @@ var (
 	optionEnabledSingleLine = flag.Bool("s", false, "Log request in a single line (compresses newlines)")
 	optionEnabledIgnoreBody = flag.Bool("i", false, "Skip logging body content")
 	optionAllowedOrigins    = flag.String("a", "", "List of allowed origin URLs (e.g., https://aaa,http://bbb). Empty means all origins allowed")
+
+	// Pre-parsed allowed origin URLs for validation
+	allowedOriginURLs []*url.URL
 )
 
 const maxBodySize = 10 << 20 // 10 MiB
@@ -55,6 +58,7 @@ func main() {
 	// Get allowed origins configuration
 	allowedOrigins := getConfiguredAllowedOrigins()
 	if allowedOrigins != "" {
+		allowedOriginURLs = parseAllowedOrigins(allowedOrigins)
 		log.Printf("Allowed origins: %s", allowedOrigins)
 	} else {
 		log.Printf("Allowed origins: all (no restriction)")
@@ -75,7 +79,7 @@ func main() {
 		}
 
 		// Validate origin against allowed list
-		if !isOriginAllowed(origin, allowedOrigins) {
+		if !isOriginAllowed(origin, allowedOriginURLs) {
 			log.Printf("[WARN] origin not allowed: %s", origin)
 			http.Error(w, "Forbidden: origin not allowed", http.StatusForbidden)
 			return
@@ -249,29 +253,60 @@ func getConfiguredAllowedOrigins() string {
 	return origins
 }
 
-// isOriginAllowed checks if the given origin URL is allowed based on the configuration.
-// If allowedList is empty, all origins are allowed.
-// Performs prefix matching to support multiple origins with the same scheme and host.
-// Examples: "https://example.com" matches "https://example.com:8080" and "https://example.com/path"
-func isOriginAllowed(originURL string, allowedList string) bool {
-	if allowedList == "" {
+// parseAllowedOrigins parses the allowed origins string into a slice of URL objects.
+// Exits fatally if any origin cannot be parsed.
+func parseAllowedOrigins(allowedList string) []*url.URL {
+	var urls []*url.URL
+	allowed := strings.Split(allowedList, ",")
+	for _, ao := range allowed {
+		ao = strings.TrimSpace(ao)
+		if ao == "" {
+			continue
+		}
+		u, err := url.Parse(ao)
+		if err != nil {
+			log.Fatalf("failed to parse allowed origin: %s", ao)
+		}
+		urls = append(urls, u)
+	}
+	return urls
+}
+
+// isOriginAllowed checks if the given origin URL is allowed based on the pre-parsed allowed URLs.
+// If allowedURLs is empty, all origins are allowed.
+// Parses the origin URL and compares Scheme and Host with allowed URLs.
+// If an allowed URL has no Scheme, allows both http and https for that Host.
+func isOriginAllowed(originURL string, allowedURLs []*url.URL) bool {
+	if len(allowedURLs) == 0 {
 		return true // Empty list means all origins are allowed
 	}
 
-	// Trim whitespace from the origin URL
-	originURL = strings.TrimSpace(originURL)
+	// Parse origin URL
+	originParsed, err := url.Parse(originURL)
+	if err != nil {
+		log.Fatalf("failed to parse origin URL: %v", err)
+	}
+	originScheme := originParsed.Scheme
+	if originScheme == "" {
+		originScheme = "http" // Default to http if no scheme
+	}
+	originHost := originParsed.Host
 
-	// Check against each allowed origin (prefix matching)
-	allowed := strings.Split(allowedList, ",")
-	for _, allowedOrigin := range allowed {
-		allowedOrigin = strings.TrimSpace(allowedOrigin)
-		if allowedOrigin == "" {
-			continue
-		}
+	// Check against each allowed URL
+	for _, allowed := range allowedURLs {
+		allowedScheme := allowed.Scheme
+		allowedHost := allowed.Host
 
-		// Prefix match: the originURL must start with the allowed origin
-		if strings.HasPrefix(originURL, allowedOrigin) {
-			return true
+		if allowedScheme == "" {
+			// No scheme specified: allow both http and https
+			if (originScheme == "http" || originScheme == "https") && originHost == allowedHost {
+				return true
+			}
+		} else {
+			// Scheme specified: must match exactly
+			if originScheme == allowedScheme && originHost == allowedHost {
+				return true
+			}
 		}
 	}
 
