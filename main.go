@@ -15,10 +15,10 @@ import (
 )
 
 var (
-	// Command options (the -h and --help flags are provided by default in the flag package)
 	commandDescription      = "HTTP trace proxy server:\n  - Logs request/response details\n  - Forwards to origin specified via ?origin=<URL>\n  ALLOWED_ORIGINS env var can be used to set allowed origins."
-	commandOptionFieldWidth = "12" // recommended width = general: 12, bool only: 5
-	optionPort              = flag.String("p", "8888", "Listening port for the HTTP trace proxy")
+	commandOptionFieldWidth = "12" // Recommended width = general: 12, bool only: 5
+	// Command options (the -h and --help flags are provided by default in the flag package)
+	optionPort              = flag.Int("p", 8888, "Listening port for the HTTP trace proxy")
 	optionEnabledSingleLine = flag.Bool("s", false, "Log request in a single line (compresses newlines)")
 	optionEnabledIgnoreBody = flag.Bool("i", false, "Skip logging body content")
 	optionAllowedOrigins    = flag.String("a", "", "List of allowed origin URLs (e.g., https://aaa,http://bbb). Empty means all origins allowed")
@@ -92,8 +92,9 @@ func main() {
 		proxy.ServeHTTP(w, r)
 	})
 
-	log.Printf("Start http://localhost:" + *optionPort)
-	if err := http.ListenAndServe(":"+*optionPort, nil); err != nil {
+	portString := fmt.Sprintf("%d", *optionPort)
+	log.Printf("Start http://localhost:" + portString)
+	if err := http.ListenAndServe(":"+portString, nil); err != nil {
 		handleError(err, "http.ListenAndServe", true)
 	}
 }
