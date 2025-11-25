@@ -10,7 +10,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
-	"regexp"
+	"path/filepath"
 	"strings"
 )
 
@@ -18,10 +18,10 @@ var (
 	commandDescription      = "HTTP trace proxy server:\n  - Logs request/response details\n  - Forwards to origin specified via ?origin=<URL>\n  ALLOWED_ORIGINS env var can be used to set allowed origins."
 	commandOptionFieldWidth = "12" // Recommended width = general: 12, bool only: 5
 	// Command options (the -h and --help flags are provided by default in the flag package)
-	optionPort              = flag.Int("p", 8888, "Listening port for the HTTP trace proxy")
-	optionEnabledSingleLine = flag.Bool("s", false, "Log request in a single line (compresses newlines)")
-	optionEnabledIgnoreBody = flag.Bool("i", false, "Skip logging body content")
-	optionAllowedOrigins    = flag.String("a", "", "List of allowed origin URLs (e.g., https://aaa,http://bbb). Empty means all origins allowed")
+	optionPort              = defineFlagValue("p", "Listening port for the HTTP trace proxy", 8888, flag.Int)
+	optionEnabledSingleLine = defineFlagValue("s", "Log request in a single line (compresses newlines)", false, flag.Bool)
+	optionEnabledIgnoreBody = defineFlagValue("i", "Skip logging body content", false, flag.Bool)
+	optionAllowedOrigins    = defineFlagValue("a", "List of allowed origin URLs (e.g., https://aaa,http://bbb). Empty means all origins allowed", "", flag.String)
 
 	// Pre-parsed allowed origin URLs for validation
 	allowedOriginURLs []*url.URL
@@ -34,15 +34,7 @@ func init() {
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
 
 	// Set custom usage
-	b := new(bytes.Buffer)
-	func() { flag.CommandLine.SetOutput(b); flag.Usage(); flag.CommandLine.SetOutput(os.Stderr) }()
-	usage := strings.Replace(strings.Replace(b.String(), ":", " [OPTIONS] [-h, --help]\n\nDescription:\n  "+commandDescription+"\n\nOptions:\n", 1), "Usage of", "Usage:", 1)
-	re := regexp.MustCompile(`[^,] +(-\S+)(?: (\S+))?\n*(\s+)(.*)\n`)
-	flag.Usage = func() {
-		_, _ = fmt.Fprint(flag.CommandLine.Output(), re.ReplaceAllStringFunc(usage, func(m string) string {
-			return fmt.Sprintf("  %-"+commandOptionFieldWidth+"s %s\n", re.FindStringSubmatch(m)[1]+" "+strings.TrimSpace(re.FindStringSubmatch(m)[2]), re.FindStringSubmatch(m)[4])
-		}))
-	}
+	flag.Usage = customUsage(os.Stderr, commandDescription, commandOptionFieldWidth)
 }
 
 // Build:
@@ -50,10 +42,8 @@ func init() {
 func main() {
 	flag.Parse()
 	fmt.Printf("[ Command options ]\n")
-	flag.VisitAll(func(a *flag.Flag) {
-		fmt.Printf("  -%-"+commandOptionFieldWidth+"s %s\n", fmt.Sprintf("%s %v", a.Name, a.Value), strings.Trim(a.Usage, "\n"))
-	})
-	fmt.Printf("\n")
+	printOptionsUsage(commandOptionFieldWidth, true)
+	fmt.Println()
 
 	// Get allowed origins configuration
 	allowedOrigins := getConfiguredAllowedOrigins()
@@ -323,4 +313,39 @@ func isOriginAllowed(originURL string, allowedURLs []*url.URL) bool {
 	}
 
 	return false
+}
+
+// =======================================
+// flag Utils
+// =======================================
+
+// Helper function for flag
+func defineFlagValue[T comparable](flagName, description string, defaultValue T, flagFunc func(name string, value T, usage string) *T) *T {
+	var zero T
+	if defaultValue != zero {
+		description = description + fmt.Sprintf(" (default %v)", defaultValue)
+	}
+	return flagFunc(flagName, defaultValue, description)
+}
+
+// Custom usage message
+func customUsage(output io.Writer, description, fieldWidth string) func() {
+	return func() {
+		fmt.Fprintf(output, "Usage: %s [OPTIONS] [-h, --help]\n\n", func() string { e, _ := os.Executable(); return filepath.Base(e) }())
+		fmt.Fprintf(output, "Description:\n  %s\n\n", description)
+		fmt.Fprintf(output, "Options:\n")
+		printOptionsUsage(fieldWidth, false)
+	}
+}
+
+// Print options usage message
+func printOptionsUsage(fieldWidth string, currentValue bool) {
+	flag.VisitAll(func(f *flag.Flag) {
+		value := strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(fmt.Sprintf("%T", f.Value), "*flag.", ""), "Value", ""), "bool", "")
+		if currentValue {
+			value = f.Value.String()
+		}
+		format := "  -%-" + fieldWidth + "s %s\n"
+		fmt.Printf(format, f.Name+" "+value, f.Usage)
+	})
 }
