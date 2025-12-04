@@ -40,7 +40,7 @@ curl "http://localhost:8888/get?origin=https://httpbin.org"
 
 ## Command Options
 
-```
+```plaintext
 Usage: traceproxy [OPTIONS]
 
 Description:
