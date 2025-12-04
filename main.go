@@ -331,7 +331,7 @@ func defineFlagValue[T comparable](flagName, description string, defaultValue T,
 // Custom usage message
 func customUsage(output io.Writer, description, fieldWidth string) func() {
 	return func() {
-		fmt.Fprintf(output, "Usage: %s [OPTIONS] [-h, --help]\n\n", func() string { e, _ := os.Executable(); return filepath.Base(e) }())
+		fmt.Fprintf(output, "Usage: %s [OPTIONS]\n\n", func() string { e, _ := os.Executable(); return filepath.Base(e) }())
 		fmt.Fprintf(output, "Description:\n  %s\n\n", description)
 		fmt.Fprintf(output, "Options:\n")
 		printOptionsUsage(fieldWidth, false)
@@ -341,7 +341,7 @@ func customUsage(output io.Writer, description, fieldWidth string) func() {
 // Print options usage message
 func printOptionsUsage(fieldWidth string, currentValue bool) {
 	flag.VisitAll(func(f *flag.Flag) {
-		value := strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(fmt.Sprintf("%T", f.Value), "*flag.", ""), "Value", ""), "bool", "")
+		value := strings.NewReplacer("*flag.boolValue", "", "*flag.", "<", "Value", ">").Replace(fmt.Sprintf("%T", f.Value))
 		if currentValue {
 			value = f.Value.String()
 		}

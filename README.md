@@ -41,7 +41,7 @@ curl "http://localhost:8888/get?origin=https://httpbin.org"
 ## Command Options
 
 ```
-Usage: traceproxy [OPTIONS] [-h, --help]
+Usage: traceproxy [OPTIONS]
 
 Description:
   HTTP trace proxy server:
@@ -50,9 +50,9 @@ Description:
   ALLOWED_ORIGINS env var can be used to set allowed origins.
 
 Options:
-  -a string     List of allowed origin URLs (e.g., https://aaa,http://bbb). Empty means all origins allowed
+  -a <string>   List of allowed origin URLs (e.g., https://aaa,http://bbb). Empty means all origins allowed
   -i            Skip logging body content
-  -p int        Listening port for the HTTP trace proxy (default 8888)
+  -p <int>      Listening port for the HTTP trace proxy (default 8888)
   -s            Log request in a single line (compresses newlines)
 ```
 
