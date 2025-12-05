@@ -19,6 +19,7 @@ A lightweight HTTP proxy server that intercepts, logs, and forwards HTTP request
 - 🌐 .localhost domain support for easy local testing
 - 🔒 Origin restriction with prefix matching
 - 📝 Flexible log output formats
+- 🗜️ Optional compression control for readable response bodies
 - ⚡ Minimal overhead, built with Go's standard library
 
 ## Installation
@@ -56,6 +57,7 @@ Description:
 
 Options:
   -a <string>   List of allowed origin URLs (e.g., https://aaa,http://bbb). Empty means all origins allowed
+  -d            Disable compression by overriding Accept-Encoding to identity
   -i            Skip logging body content
   -p <int>      Listening port for the HTTP trace proxy (default 8888)
   -s            Log request in a single line (compresses newlines)
@@ -76,6 +78,9 @@ Options:
 # Via environment variable
 export ALLOWED_ORIGINS="https://httpbin.org"
 ./traceproxy
+
+# Disable compression for readable response bodies
+./traceproxy -d
 
 # Using .localhost domain for easy testing
 curl "http://api.example.com.localhost:8888/users"
@@ -106,6 +111,19 @@ curl -H "Authorization: Bearer token" "http://httpbin.org.localhost:8888/headers
 > - Testing with real domain names locally
 > - Avoiding CORS issues during development
 > - Simulating production domains without modifying /etc/hosts
+
+## Compression Control
+
+By default, the proxy preserves the client's `Accept-Encoding` header, allowing the origin server to return compressed responses (gzip, deflate, etc.). However, compressed responses may be difficult to read in logs.
+
+Use the `-d` flag to disable compression:
+
+```bash
+# Force uncompressed responses for readable logging
+./traceproxy -d
+```
+
+This overrides the `Accept-Encoding` header to `identity`, ensuring the origin server returns uncompressed content that can be easily inspected in the logs.
 
 ## Requirements
 
