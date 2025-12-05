@@ -21,6 +21,7 @@ var (
 	optionEnabledSingleLine = defineFlagValue("s", "Log request in a single line (compresses newlines)", false, flag.Bool)
 	optionEnabledIgnoreBody = defineFlagValue("i", "Skip logging body content", false, flag.Bool)
 	optionAllowedOrigins    = defineFlagValue("a", "List of allowed origin URLs (e.g., https://aaa,http://bbb). Empty means all origins allowed", "", flag.String)
+	optionDisableEncoding   = defineFlagValue("d", "Disable compression by overriding Accept-Encoding to identity", false, flag.Bool)
 
 	// Pre-parsed allowed origin URLs for validation
 	allowedOriginURLs []*url.URL
@@ -148,6 +149,12 @@ func newProxy(allowedOriginURLs []*url.URL) *httputil.ReverseProxy {
 			req.URL.Scheme = uOrigin.Scheme
 			req.URL.Host = uOrigin.Host
 			req.Host = uOrigin.Host
+
+			// Override Accept-Encoding to identity if the option is enabled
+			// This ensures response body is readable (prevents gzip/deflate compression)
+			if *optionDisableEncoding {
+				req.Header.Set("Accept-Encoding", "identity")
+			}
 
 			// Remove origin from query if it was specified as a query parameter
 			if removeFromQuery {
