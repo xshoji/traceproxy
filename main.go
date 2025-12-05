@@ -15,8 +15,7 @@ import (
 )
 
 var (
-	commandDescription      = "HTTP trace proxy server:\n  - Logs request/response details\n  - Forwards to origin specified via ?origin=<URL>\n  ALLOWED_ORIGINS env var can be used to set allowed origins."
-	commandOptionFieldWidth = "12" // Recommended width = general: 12, bool only: 5
+	commandDescription = "HTTP trace proxy server:\n  - Logs request/response details\n  - Forwards to origin specified via ?origin=<URL> or Host header ending with .localhost\n  - Example: Access http://example.com.localhost:8888/path to proxy to https://example.com/path\n  ALLOWED_ORIGINS env var can be used to set allowed origins."
 	// Command options (the -h and --help flags are provided by default in the flag package)
 	optionPort              = defineFlagValue("p", "Listening port for the HTTP trace proxy", 8888, flag.Int)
 	optionEnabledSingleLine = defineFlagValue("s", "Log request in a single line (compresses newlines)", false, flag.Bool)
@@ -34,7 +33,7 @@ func init() {
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
 
 	// Set custom usage
-	flag.Usage = customUsage(os.Stderr, commandDescription, commandOptionFieldWidth)
+	flag.Usage = customUsage(commandDescription)
 }
 
 // Build:
@@ -42,7 +41,7 @@ func init() {
 func main() {
 	flag.Parse()
 	fmt.Printf("[ Command options ]\n")
-	printOptionsUsage(commandOptionFieldWidth, true)
+	printOptionsUsage(true)
 	fmt.Println()
 
 	// Get allowed origins configuration
@@ -59,26 +58,18 @@ func main() {
 
 	// Start HTTP server
 	// create and reuse a single ReverseProxy instance
-	proxy := newProxy()
+	proxy := newProxy(allowedOriginURLs)
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		dumpRequest(r)
 
-		// Get origin query parameter
-		origin := r.URL.Query().Get("origin")
-		if origin == "" {
+		// Check if origin is specified (either via query param or .localhost domain)
+		if !hasOrigin(r) {
 			fmt.Fprintf(w, "OK\n")
 			return
 		}
 
-		// Validate origin against allowed list
-		if !isOriginAllowed(origin, allowedOriginURLs) {
-			log.Printf("[WARN] origin not allowed: %s", origin)
-			http.Error(w, "Forbidden: origin not allowed", http.StatusForbidden)
-			return
-		}
-
-		// Let the shared proxy handle the request (Director will rewrite scheme/host)
+		// Let the proxy handle the request (Director will extract origin and validate)
 		proxy.ServeHTTP(w, r)
 	})
 
@@ -89,17 +80,67 @@ func main() {
 	}
 }
 
+// hasOrigin checks if the request has an origin specified either via query parameter
+// or via Host header ending with .localhost
+func hasOrigin(r *http.Request) bool {
+	// Check query parameter
+	if r.URL.Query().Get("origin") != "" {
+		return true
+	}
+
+	// Check .localhost domain
+	host := r.Host
+	hostname := host
+	if colonIdx := strings.LastIndex(host, ":"); colonIdx != -1 {
+		hostname = host[:colonIdx]
+	}
+	return strings.HasSuffix(hostname, ".localhost")
+}
+
+// extractOrigin extracts the origin URL from the request.
+// Returns the origin URL and whether it should be removed from query parameters.
+func extractOrigin(r *http.Request) (string, bool) {
+	// First, check query parameter
+	origin := r.URL.Query().Get("origin")
+	if origin != "" {
+		return origin, true // origin from query param should be removed
+	}
+
+	// Extract from .localhost domain
+	host := r.Host
+	hostname := host
+	if colonIdx := strings.LastIndex(host, ":"); colonIdx != -1 {
+		hostname = host[:colonIdx]
+	}
+
+	if strings.HasSuffix(hostname, ".localhost") {
+		targetDomain := strings.TrimSuffix(hostname, ".localhost")
+		origin = "https://" + targetDomain
+		log.Printf("[INFO] Extracted origin from Host header: %s -> %s", host, origin)
+		return origin, false // origin from domain, no query param to remove
+	}
+
+	return "", false
+}
+
 // newProxy creates and returns a configured ReverseProxy instance.
-// The Director rewrites the request's scheme and host using the `origin` query param,
-// while preserving the original path and query. ModifyResponse logs the response.
-func newProxy() *httputil.ReverseProxy {
+// The Director extracts origin from query param or Host header, validates it,
+// and rewrites the request's scheme and host. ModifyResponse logs the response.
+func newProxy(allowedOriginURLs []*url.URL) *httputil.ReverseProxy {
 	return &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
-			originUrl := req.URL.Query().Get("origin")
-			if originUrl == "" {
+			origin, removeFromQuery := extractOrigin(req)
+			if origin == "" {
 				return
 			}
-			uOrigin, err := parseURLWithDefault(originUrl, "https")
+
+			// Validate origin against allowed list
+			if !isOriginAllowed(origin, allowedOriginURLs) {
+				log.Printf("[WARN] origin not allowed: %s", origin)
+				return
+			}
+
+			uOrigin, err := parseURLWithDefault(origin, "https")
 			if err != nil {
 				log.Printf("[ERROR] failed to parse origin URL in Director: %v", err)
 				return
@@ -108,10 +149,12 @@ func newProxy() *httputil.ReverseProxy {
 			req.URL.Host = uOrigin.Host
 			req.Host = uOrigin.Host
 
-			// remove origin from query so backend doesn't see it
-			q := req.URL.Query()
-			q.Del("origin")
-			req.URL.RawQuery = q.Encode()
+			// Remove origin from query if it was specified as a query parameter
+			if removeFromQuery {
+				q := req.URL.Query()
+				q.Del("origin")
+				req.URL.RawQuery = q.Encode()
+			}
 		},
 		ModifyResponse: func(resp *http.Response) error {
 			dumpResponse(resp)
@@ -329,23 +372,23 @@ func defineFlagValue[T comparable](flagName, description string, defaultValue T,
 }
 
 // Custom usage message
-func customUsage(output io.Writer, description, fieldWidth string) func() {
+func customUsage(description string) func() {
 	return func() {
-		fmt.Fprintf(output, "Usage: %s [OPTIONS]\n\n", func() string { e, _ := os.Executable(); return filepath.Base(e) }())
-		fmt.Fprintf(output, "Description:\n  %s\n\n", description)
-		fmt.Fprintf(output, "Options:\n")
-		printOptionsUsage(fieldWidth, false)
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage: %s [OPTIONS]\n\n", func() string { e, _ := os.Executable(); return filepath.Base(e) }())
+		fmt.Fprintf(flag.CommandLine.Output(), "Description:\n  %s\n\n", description)
+		fmt.Fprintf(flag.CommandLine.Output(), "Options:\n")
+		printOptionsUsage(false)
 	}
 }
 
 // Print options usage message
-func printOptionsUsage(fieldWidth string, currentValue bool) {
+func printOptionsUsage(currentValue bool) {
+	fieldWidth := "12" // Recommended width = general: 12, bool only: 5
 	flag.VisitAll(func(f *flag.Flag) {
 		value := strings.NewReplacer("*flag.boolValue", "", "*flag.", "<", "Value", ">").Replace(fmt.Sprintf("%T", f.Value))
 		if currentValue {
 			value = f.Value.String()
 		}
-		format := "  -%-" + fieldWidth + "s %s\n"
-		fmt.Printf(format, f.Name+" "+value, f.Usage)
+		fmt.Fprintf(flag.CommandLine.Output(), "  -%-"+fieldWidth+"s %s\n", f.Name+" "+value, f.Usage)
 	})
 }
