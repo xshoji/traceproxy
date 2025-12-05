@@ -15,7 +15,8 @@ A lightweight HTTP proxy server that intercepts, logs, and forwards HTTP request
 ## Features
 
 - 🔍 Request/Response logging
-- 🎯 Dynamic routing via query parameter
+- 🎯 Dynamic routing via query parameter or Host header
+- 🌐 .localhost domain support for easy local testing
 - 🔒 Origin restriction with prefix matching
 - 📝 Flexible log output formats
 - ⚡ Minimal overhead, built with Go's standard library
@@ -34,8 +35,11 @@ go build -ldflags="-s -w" -trimpath -o $(basename "$PWD") main.go
 # Start the proxy on port 8888
 ./traceproxy
 
-# Proxy a request to an origin
+# Method 1: Proxy via query parameter
 curl "http://localhost:8888/get?origin=https://httpbin.org"
+
+# Method 2: Proxy via .localhost domain (removes .localhost suffix)
+curl "http://httpbin.org.localhost:8888/get"
 ```
 
 ## Command Options
@@ -46,7 +50,8 @@ Usage: traceproxy [OPTIONS]
 Description:
   HTTP trace proxy server:
   - Logs request/response details
-  - Forwards to origin specified via ?origin=<URL>
+  - Forwards to origin specified via ?origin=<URL> or Host header ending with .localhost
+  - Example: Access http://example.com.localhost:8888/path to proxy to https://example.com/path
   ALLOWED_ORIGINS env var can be used to set allowed origins.
 
 Options:
@@ -71,15 +76,36 @@ Options:
 # Via environment variable
 export ALLOWED_ORIGINS="https://httpbin.org"
 ./traceproxy
+
+# Using .localhost domain for easy testing
+curl "http://api.example.com.localhost:8888/users"
+# This proxies to: https://api.example.com/users
+
+# Access with custom headers
+curl -H "Authorization: Bearer token" "http://httpbin.org.localhost:8888/headers"
 ```
 
 ## How It Works
 
+### Method 1: Query Parameter
 1. Client sends: `GET /path?origin=https://example.com`
 2. Proxy logs the request
 3. Proxy forwards to `https://example.com/path`
 4. Proxy logs the response
 5. Response sent back to client
+
+### Method 2: .localhost Domain
+1. Client sends: `GET http://example.com.localhost:8888/path`
+2. Proxy extracts `example.com` from the Host header (removes `.localhost`)
+3. Proxy logs the request
+4. Proxy forwards to `https://example.com/path` (default scheme: https)
+5. Proxy logs the response
+6. Response sent back to client
+
+> **Note**: The `.localhost` domain method is particularly useful for:
+> - Testing with real domain names locally
+> - Avoiding CORS issues during development
+> - Simulating production domains without modifying /etc/hosts
 
 ## Requirements
 
